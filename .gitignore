@@ -1,0 +1,16 @@
+# Build output
+/build/
+
+# Downloaded dependencies
+/external/
+
+# IDE
+.vscode/
+.vs/
+*.user
+
+# Compiled files
+*.exe
+*.obj
+*.pdb
+*.ilk
