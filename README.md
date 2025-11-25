@@ -24,7 +24,7 @@ Expected solution: `x = 2`, `f(x) = 0`
 ## Quick Start
 
 ```cmd
-git clone <repository-url>
+git clone https://github.com/Foadsf/test_cpp_ipopt
 cd test_cpp_ipopt
 build.cmd
 ```
@@ -74,7 +74,7 @@ Optimization succeeded!
 Edit `build.cmd` and modify:
 
 ```batch
-set "CONDA_ROOT=C:\Users\<your-username>\AppData\Local\miniconda3"
+set "CONDA_ROOT=%USERPROFILE%\AppData\Local\miniconda3"
 ```
 
 ### Changing the Visual Studio Version
@@ -82,13 +82,13 @@ set "CONDA_ROOT=C:\Users\<your-username>\AppData\Local\miniconda3"
 Edit `build.cmd` and modify the vcvars path:
 
 ```batch
-call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+call "%ProgramFiles(x86)%\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
 For VS2022:
 
 ```batch
-call "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+call "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
 ## IPOPT Configuration
