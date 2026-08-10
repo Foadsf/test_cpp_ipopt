@@ -1,0 +1,733 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+build.cmd
+CMakeLists.txt
+lessons_learned.md
+LICENSE
+main.cpp
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+# Build output
+/build/
+
+# Downloaded dependencies
+/external/
+
+# IDE
+.vscode/
+.vs/
+*.user
+
+# Compiled files
+*.exe
+*.obj
+*.pdb
+*.ilk
+</file>
+
+<file path="build.cmd">
+@echo off
+setlocal enabledelayedexpansion
+
+REM === IPOPT Build Script ===
+REM Uses conda-forge IPOPT with MUMPS
+
+set "CONDA_ROOT=%USERPROFILE%\AppData\Local\miniconda3"
+set "ENV_NAME=ipopt-dev"
+set "BUILD_DIR=build"
+
+REM Check conda installation
+if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
+    echo ERROR: Miniconda not found at %CONDA_ROOT%
+    exit /b 1
+)
+
+REM Initialize conda for this shell
+call "%CONDA_ROOT%\Scripts\activate.bat" "%CONDA_ROOT%"
+
+REM Check if environment exists
+conda info --envs | findstr /C:"%ENV_NAME%" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo === Creating conda environment: %ENV_NAME% ===
+    conda create -n %ENV_NAME% -c conda-forge ipopt -y
+    if errorlevel 1 (
+        echo ERROR: Failed to create conda environment
+        exit /b 1
+    )
+)
+
+REM Check if correct environment is active
+if not "%CONDA_DEFAULT_ENV%"=="%ENV_NAME%" (
+    echo.
+    echo === Activating conda environment: %ENV_NAME% ===
+    call conda activate %ENV_NAME%
+    if errorlevel 1 (
+        echo ERROR: Failed to activate conda environment
+        exit /b 1
+    )
+)
+
+echo Using conda environment: %CONDA_PREFIX%
+
+REM Setup Visual Studio environment
+where cl >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo === Setting up Visual Studio environment ===
+    call "%ProgramFiles(x86)%\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    if errorlevel 1 (
+        echo ERROR: Failed to setup Visual Studio environment
+        exit /b 1
+    )
+)
+
+REM Configure
+echo.
+echo === Configuring ===
+cmake -B "%BUILD_DIR%" -S .
+if errorlevel 1 (
+    echo ERROR: CMake configure failed
+    exit /b 1
+)
+
+REM Build
+echo.
+echo === Building ===
+cmake --build "%BUILD_DIR%" --config Release
+if errorlevel 1 (
+    echo ERROR: Build failed
+    exit /b 1
+)
+
+REM Run
+echo.
+echo === Running ===
+"%BUILD_DIR%\Release\test_ipopt.exe"
+
+endlocal
+</file>
+
+<file path="CMakeLists.txt">
+cmake_minimum_required(VERSION 3.20)
+project(test_ipopt LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Use conda-forge IPOPT (includes MUMPS)
+# Set CONDA_PREFIX to the active conda environment
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CONDA_PREFIX "$ENV{CONDA_PREFIX}")
+else()
+    message(FATAL_ERROR 
+        "CONDA_PREFIX not set. Please activate the conda environment:\n"
+        "  conda activate ipopt-dev"
+    )
+endif()
+
+set(IPOPT_ROOT "${CONDA_PREFIX}/Library")
+
+find_path(IPOPT_INCLUDE_DIR
+    NAMES IpIpoptApplication.hpp
+    PATHS "${IPOPT_ROOT}/include/coin-or"
+    NO_DEFAULT_PATH
+)
+
+find_library(IPOPT_LIBRARY
+    NAMES ipopt ipopt-3
+    PATHS "${IPOPT_ROOT}/lib"
+    NO_DEFAULT_PATH
+)
+
+if(NOT IPOPT_INCLUDE_DIR OR NOT IPOPT_LIBRARY)
+    message(FATAL_ERROR 
+        "IPOPT not found in conda environment.\n"
+        "  CONDA_PREFIX: ${CONDA_PREFIX}\n"
+        "  Run: conda install -c conda-forge ipopt"
+    )
+endif()
+
+message(STATUS "Using conda IPOPT from: ${CONDA_PREFIX}")
+message(STATUS "IPOPT include: ${IPOPT_INCLUDE_DIR}")
+message(STATUS "IPOPT library: ${IPOPT_LIBRARY}")
+
+add_executable(test_ipopt main.cpp)
+target_include_directories(test_ipopt PRIVATE ${IPOPT_INCLUDE_DIR})
+target_link_libraries(test_ipopt PRIVATE ${IPOPT_LIBRARY})
+
+# Copy DLLs to output directory
+file(GLOB IPOPT_DLLS "${IPOPT_ROOT}/bin/*ipopt*.dll" "${IPOPT_ROOT}/bin/*mumps*.dll")
+add_custom_command(TARGET test_ipopt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${IPOPT_DLLS}
+        $<TARGET_FILE_DIR:test_ipopt>
+    COMMENT "Copying IPOPT DLLs from conda"
+)
+</file>
+
+<file path="lessons_learned.md">
+# Lessons Learned: IPOPT on Windows with C++
+
+This document captures the challenges encountered and solutions found while setting up a minimal IPOPT example on Windows.
+
+## 1. Package Manager Selection
+
+### Problem
+
+IPOPT requires a sparse linear solver. The available options are:
+
+- **MUMPS** - Open source, included in official releases
+- **HSL (MA27, MA57, etc.)** - Requires license/registration
+- **Pardiso** - Commercial or via Intel MKL
+- **SPRAL** - Open source, primarily for Linux
+
+### Findings
+
+| Package Manager | IPOPT Available | MUMPS Included | Windows Support |
+| --------------- | --------------- | -------------- | --------------- |
+| vcpkg           | ✅ Yes          | ❌ No          | ✅ Yes          |
+| Conan           | ❌ No           | -              | -               |
+| conda-forge     | ✅ Yes          | ✅ Yes         | ✅ Yes          |
+
+### Solution
+
+**conda-forge** is the only C++ package manager that provides IPOPT with MUMPS pre-built for Windows.
+
+```cmd
+conda create -n ipopt-dev -c conda-forge ipopt
+```
+
+## 2. vcpkg's coin-or-ipopt Limitations
+
+### Problem
+
+vcpkg's `coin-or-ipopt` package builds without MUMPS. It only supports:
+
+- HSL solvers (loaded at runtime via `libhsl.dll`)
+- Pardiso (loaded at runtime via `libpardiso.dll`)
+
+### Error Encountered
+
+```
+Exception of type: DYNAMIC_LIBRARY_FAILURE
+Error 126 while loading DLL libhsl.dll: The specified module could not be found.
+```
+
+### Root Cause
+
+vcpkg's portfile doesn't include MUMPS as a dependency because:
+
+1. MUMPS requires Fortran compilation
+2. MUMPS is not available as a vcpkg port
+3. The port relies on runtime-loadable solvers instead
+
+### Lesson
+
+Always check what linear solvers a pre-built IPOPT package includes before committing to a package manager.
+
+## 3. CMake Integration Without pkg-config
+
+### Problem
+
+vcpkg's IPOPT only provides pkg-config files (`.pc`), not CMake config files. Windows MSVC environments don't have `pkg-config` by default.
+
+### Error Encountered
+
+```
+Could NOT find PkgConfig (missing: PKG_CONFIG_EXECUTABLE)
+```
+
+### Solution
+
+Use CMake's `find_path` and `find_library` directly:
+
+```cmake
+find_path(IPOPT_INCLUDE_DIR
+    NAMES IpIpoptApplication.hpp
+    PATH_SUFFIXES coin-or
+)
+
+find_library(IPOPT_LIBRARY NAMES ipopt)
+```
+
+## 4. Conda Environment Integration with CMake
+
+### Problem
+
+CMake needs to know where conda installed IPOPT.
+
+### Solution
+
+Use the `CONDA_PREFIX` environment variable:
+
+```cmake
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CONDA_PREFIX "$ENV{CONDA_PREFIX}")
+    set(IPOPT_ROOT "${CONDA_PREFIX}/Library")
+endif()
+```
+
+### Important
+
+The conda environment must be activated before running CMake, otherwise `CONDA_PREFIX` won't be set.
+
+## 5. Runtime Linear Solver Selection
+
+### Problem
+
+Even with MUMPS available, IPOPT may default to trying Pardiso first.
+
+### Error Encountered
+
+```
+Error 126 while loading DLL libpardiso.dll: The specified module could not be found.
+```
+
+### Solutions
+
+**Option A: Set in code (recommended)**
+
+```cpp
+app->Options()->SetStringValue("linear_solver", "mumps");
+```
+
+**Option B: Options file**
+
+Create `ipopt.opt` in the working directory:
+
+```
+linear_solver mumps
+```
+
+### Lesson
+
+Always explicitly set the linear solver to avoid runtime surprises.
+
+## 6. DLL Dependencies
+
+### Problem
+
+The executable runs but crashes because IPOPT DLLs aren't in the path.
+
+### Solution
+
+Copy DLLs to the output directory via CMake:
+
+```cmake
+file(GLOB IPOPT_DLLS "${IPOPT_ROOT}/bin/*ipopt*.dll" "${IPOPT_ROOT}/bin/*mumps*.dll")
+add_custom_command(TARGET test_ipopt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${IPOPT_DLLS}
+        $<TARGET_FILE_DIR:test_ipopt>
+)
+```
+
+## 7. TNLP Interface Requirements
+
+### Key Methods
+
+Every IPOPT problem must implement these `TNLP` virtual methods:
+
+| Method               | Purpose                        |
+| -------------------- | ------------------------------ |
+| `get_nlp_info`       | Problem dimensions             |
+| `get_bounds_info`    | Variable and constraint bounds |
+| `get_starting_point` | Initial guess                  |
+| `eval_f`             | Objective function value       |
+| `eval_grad_f`        | Objective gradient             |
+| `eval_g`             | Constraint values              |
+| `eval_jac_g`         | Constraint Jacobian            |
+| `eval_h`             | Hessian of Lagrangian          |
+| `finalize_solution`  | Called with final solution     |
+
+### Hessian Structure
+
+The `eval_h` method is called twice:
+
+1. First with `values == nullptr` to get the sparsity structure
+2. Then with `values != nullptr` to get actual values
+
+```cpp
+bool eval_h(..., Number* values) override {
+    if (values == nullptr) {
+        // Return structure (row/column indices)
+        iRow[0] = 0;
+        jCol[0] = 0;
+    } else {
+        // Return values
+        values[0] = obj_factor * 2.0;
+    }
+    return true;
+}
+```
+
+## 8. Build System Recommendations
+
+### For Windows + IPOPT + MUMPS
+
+1. **Use conda-forge** - Only reliable source of pre-built IPOPT with MUMPS
+2. **Single build script** - Handle conda activation, VS setup, and build in one script
+3. **Check environment** - Verify conda environment is active before CMake
+4. **Copy DLLs** - Automate DLL copying in CMake
+
+### Script Pattern
+
+```batch
+REM Initialize conda
+call "%CONDA_ROOT%\Scripts\activate.bat" "%CONDA_ROOT%"
+
+REM Create environment if needed
+conda info --envs | findstr /C:"env-name" >nul 2>&1
+if errorlevel 1 conda create -n env-name -c conda-forge package -y
+
+REM Activate environment
+call conda activate env-name
+
+REM Setup Visual Studio
+call vcvars64.bat
+
+REM Build
+cmake -B build -S .
+cmake --build build --config Release
+```
+
+## Summary
+
+Getting IPOPT working on Windows with C++ requires:
+
+1. **conda-forge** for package management (vcpkg lacks MUMPS)
+2. **Explicit linear solver selection** (`linear_solver mumps`)
+3. **Proper conda/CMake integration** via `CONDA_PREFIX`
+4. **DLL management** for runtime dependencies
+5. **Unified build script** for reproducible builds
+</file>
+
+<file path="LICENSE">
+DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+Copyright (C) 2025 Foad S. Farimani
+
+Everyone is permitted to copy and distribute verbatim or modified
+copies of this license document, and changing it is allowed as long
+as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+0. You just DO WHAT THE FUCK YOU WANT TO.
+</file>
+
+<file path="main.cpp">
+// Minimal IPOPT example: minimize (x-2)^2 subject to x >= 0
+// This is the simplest possible IPOPT problem with one variable
+
+#include <IpIpoptApplication.hpp>
+#include <IpTNLP.hpp>
+#include <iostream>
+
+using namespace Ipopt;
+
+class MinimalNLP : public TNLP
+{
+  public:
+    MinimalNLP() = default;
+    virtual ~MinimalNLP() = default;
+
+    // Returns problem dimensions
+    bool get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag, IndexStyleEnum &index_style) override
+    {
+        n = 1;         // One variable: x
+        m = 0;         // No constraints
+        nnz_jac_g = 0; // No constraint Jacobian entries
+        nnz_h_lag = 1; // One Hessian entry
+        index_style = TNLP::C_STYLE;
+        return true;
+    }
+
+    // Returns variable bounds
+    bool get_bounds_info(Index n, Number *x_l, Number *x_u, Index m, Number *g_l, Number *g_u) override
+    {
+        x_l[0] = 0.0;  // x >= 0
+        x_u[0] = 1e19; // No upper bound
+        return true;
+    }
+
+    // Returns starting point
+    bool get_starting_point(Index n, bool init_x, Number *x, bool init_z, Number *z_L, Number *z_U, Index m,
+                            bool init_lambda, Number *lambda) override
+    {
+        if (init_x)
+        {
+            x[0] = 5.0; // Start at x=5
+        }
+        return true;
+    }
+
+    // Returns objective value: f(x) = (x-2)^2
+    bool eval_f(Index n, const Number *x, bool new_x, Number &obj_value) override
+    {
+        obj_value = (x[0] - 2.0) * (x[0] - 2.0);
+        return true;
+    }
+
+    // Returns gradient of objective: f'(x) = 2(x-2)
+    bool eval_grad_f(Index n, const Number *x, bool new_x, Number *grad_f) override
+    {
+        grad_f[0] = 2.0 * (x[0] - 2.0);
+        return true;
+    }
+
+    // Returns constraint values (none in this problem)
+    bool eval_g(Index n, const Number *x, bool new_x, Index m, Number *g) override
+    {
+        return true;
+    }
+
+    // Returns constraint Jacobian structure and values (none)
+    bool eval_jac_g(Index n, const Number *x, bool new_x, Index m, Index nele_jac, Index *iRow, Index *jCol,
+                    Number *values) override
+    {
+        return true;
+    }
+
+    // Returns Hessian of Lagrangian: H = 2 (constant)
+    bool eval_h(Index n, const Number *x, bool new_x, Number obj_factor, Index m, const Number *lambda, bool new_lambda,
+                Index nele_hess, Index *iRow, Index *jCol, Number *values) override
+    {
+        if (values == nullptr)
+        {
+            // Return structure
+            iRow[0] = 0;
+            jCol[0] = 0;
+        }
+        else
+        {
+            // Return values
+            values[0] = obj_factor * 2.0;
+        }
+        return true;
+    }
+
+    // Called when optimization finishes
+    void finalize_solution(SolverReturn status, Index n, const Number *x, const Number *z_L, const Number *z_U, Index m,
+                           const Number *g, const Number *lambda, Number obj_value, const IpoptData *ip_data,
+                           IpoptCalculatedQuantities *ip_cq) override
+    {
+        std::cout << "\n=== Solution ===" << std::endl;
+        std::cout << "x = " << x[0] << std::endl;
+        std::cout << "f(x) = " << obj_value << std::endl;
+        std::cout << "Expected: x = 2.0, f(x) = 0.0" << std::endl;
+    }
+};
+
+int main()
+{
+    std::cout << "IPOPT Minimal Example" << std::endl;
+    std::cout << "Minimize: (x-2)^2" << std::endl;
+    std::cout << "Subject to: x >= 0" << std::endl;
+    std::cout << "Starting point: x = 5" << std::endl;
+
+    SmartPtr<TNLP> mynlp = new MinimalNLP();
+    SmartPtr<IpoptApplication> app = IpoptApplicationFactory();
+
+    app->Options()->SetIntegerValue("print_level", 5);
+    app->Options()->SetStringValue("linear_solver", "mumps");
+    app->Options()->SetStringValue("mu_strategy", "adaptive");
+
+    ApplicationReturnStatus status = app->Initialize();
+    if (status != Solve_Succeeded)
+    {
+        std::cerr << "IPOPT initialization failed!" << std::endl;
+        return 1;
+    }
+
+    status = app->OptimizeTNLP(mynlp);
+    if (status == Solve_Succeeded)
+    {
+        std::cout << "\nOptimization succeeded!" << std::endl;
+        return 0;
+    }
+    else
+    {
+        std::cerr << "\nOptimization failed with status " << status << std::endl;
+        return 1;
+    }
+}
+</file>
+
+<file path="README.md">
+# Minimal IPOPT C++ Example
+
+A minimal working example demonstrating IPOPT (Interior Point OPTimizer) usage in C++ on Windows, using conda-forge as the package manager.
+
+## Problem
+
+This example solves the simplest possible nonlinear optimization problem:
+
+```
+Minimize: (x - 2)²
+Subject to: x ≥ 0
+Starting point: x = 5
+```
+
+Expected solution: `x = 2`, `f(x) = 0`
+
+## Prerequisites
+
+- Windows 10/11
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed at `%USERPROFILE%\AppData\Local\miniconda3`
+- Visual Studio 2019 Build Tools (or full Visual Studio 2019)
+- CMake 3.20 or higher
+
+## Quick Start
+
+```cmd
+git clone https://github.com/Foadsf/test_cpp_ipopt
+cd test_cpp_ipopt
+build.cmd
+```
+
+The build script automatically:
+
+1. Creates a conda environment `ipopt-dev` with IPOPT (if not exists)
+2. Activates the environment
+3. Sets up Visual Studio environment
+4. Configures and builds the project
+5. Runs the example
+
+## Project Structure
+
+```
+test_cpp_ipopt/
+├── CMakeLists.txt      # CMake configuration
+├── main.cpp            # IPOPT example implementation
+├── build.cmd           # Build and run script
+├── README.md           # This file
+├── lessons_learned.md  # Development notes
+├── LICENSE             # WTFPL license
+└── .gitignore
+```
+
+## Output
+
+Successful execution produces:
+
+```
+This is Ipopt version 3.14.19, running with linear solver MUMPS 5.8.1.
+...
+EXIT: Optimal Solution Found.
+
+=== Solution ===
+x = 2
+f(x) = 6.39853e-24
+Expected: x = 2.0, f(x) = 0.0
+
+Optimization succeeded!
+```
+
+## Customization
+
+### Changing the Conda Path
+
+Edit `build.cmd` and modify:
+
+```batch
+set "CONDA_ROOT=%USERPROFILE%\AppData\Local\miniconda3"
+```
+
+### Changing the Visual Studio Version
+
+Edit `build.cmd` and modify the vcvars path:
+
+```batch
+call "%ProgramFiles(x86)%\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+```
+
+For VS2022:
+
+```batch
+call "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+```
+
+## IPOPT Configuration
+
+The linear solver is set programmatically in `main.cpp`:
+
+```cpp
+app->Options()->SetStringValue("linear_solver", "mumps");
+```
+
+Other useful options:
+
+```cpp
+app->Options()->SetIntegerValue("print_level", 5);        // Verbosity (0-12)
+app->Options()->SetNumericValue("tol", 1e-8);             // Convergence tolerance
+app->Options()->SetIntegerValue("max_iter", 1000);        // Maximum iterations
+app->Options()->SetStringValue("mu_strategy", "adaptive"); // Barrier parameter strategy
+```
+
+## References
+
+- [IPOPT Documentation](https://coin-or.github.io/Ipopt/)
+- [IPOPT GitHub Repository](https://github.com/coin-or/Ipopt)
+- [conda-forge IPOPT Package](https://anaconda.org/conda-forge/ipopt)
+- [TNLP Interface Reference](https://coin-or.github.io/Ipopt/classIpopt_1_1TNLP.html)
+
+## License
+
+This project is licensed under the WTFPL - see the [LICENSE](LICENSE) file.
+</file>
+
+</files>
